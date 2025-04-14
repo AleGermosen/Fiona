@@ -5,12 +5,13 @@ from datetime import datetime
 import numpy as np
 from data_simulator import DataSimulator
 from data_manager import DataManager
+from typing import Optional
 
 class BinanceCollector:
     def __init__(self, api_key=None, api_secret=None):
         self.client = Client(api_key, api_secret) if api_key and api_secret else None
     
-    def get_historical_data(self, symbol: str, interval: str, start_str: str, end_str: str = None):
+    def get_historical_data(self, symbol: str, interval: str, start_str: str, end_str: Optional[str] = None):
         """Fetch historical data from Binance"""
         if not self.client:
             raise ValueError("Binance client not initialized. Please provide API credentials.")
@@ -41,7 +42,7 @@ class DataCollector(BinanceCollector):
         self.data_manager = DataManager()
         self.simulator = DataSimulator() if use_simulation else None
     
-    def get_historical_data(self, symbol: str, interval: str, start_str: str, end_str: str = None):
+    def get_historical_data(self, symbol: str, interval: str, start_str: str, end_str: Optional[str] = None):
         """Fetch historical data from either Binance, simulation, or stored data"""
         if self.use_stored_data:
             # Try to load from storage first
@@ -60,6 +61,10 @@ class DataCollector(BinanceCollector):
                 days = int(start_str.split()[0]) * 30
             else:
                 days = 30  # default to 30 days
+            
+            # Initialize simulator if it's None
+            if self.simulator is None:
+                self.simulator = DataSimulator()
                 
             return self.simulator.generate_historical_data(
                 days=days,

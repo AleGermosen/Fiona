@@ -7,6 +7,7 @@ from feature_engineer import FeatureEngineer
 from data_preprocessor import DataPreprocessor
 from predictor import PricePredictor
 from model_builder import ModelBuilder
+from typing import Optional
 
 class DataSimulator:
     def __init__(self, starting_price=30000, volatility=0.02, trend=0):
@@ -61,13 +62,13 @@ class DataSimulator:
 
 # modified data_collector.py
 class DataCollector:
-    def __init__(self, api_key: str = None, api_secret: str = None, use_simulation: bool = False):
+    def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None, use_simulation: bool = False):
         self.use_simulation = use_simulation
         if not use_simulation and (api_key and api_secret):
             self.client = Client(api_key, api_secret)
         self.simulator = DataSimulator() if use_simulation else None
     
-    def get_historical_data(self, symbol: str, interval: str, start_str: str, end_str: str = None):
+    def get_historical_data(self, symbol: str, interval: str, start_str: str, end_str: Optional[str] = None):
         """Fetch historical data from either Binance or simulation"""
         if self.use_simulation:
             # Convert interval to minutes for simulator
@@ -82,6 +83,10 @@ class DataCollector:
             else:
                 days = 30  # default to 30 days
             
+            # Initialize simulator if it's None
+            if self.simulator is None:
+                self.simulator = DataSimulator()
+                
             df = self.simulator.generate_historical_data(
                 days=days,
                 interval_minutes=interval_minutes

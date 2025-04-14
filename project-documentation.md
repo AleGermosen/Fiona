@@ -104,3 +104,134 @@ crypto_data/
 - Caching support
 - Cleanup of old data
 - Memory-efficient data processing
+
+## Data Source Migration: From Binance to Yahoo Finance
+
+### Overview
+
+Due to issues with accessing the Binance API, the project has been updated to use Yahoo Finance as an alternative data source for cryptocurrency price data. This document outlines the changes made and how to use the updated functionality.
+
+### Key Changes
+
+1. **New Data Source**: Added `download_from_yahoo()` function to retrieve data from Yahoo Finance API
+2. **Symbol Format**: Added automatic conversion between Binance symbol format (e.g., 'BTCUSDT') and Yahoo Finance format (e.g., 'BTC-USD')
+3. **Fallback Mechanism**: Implemented a fallback to simulated data if Yahoo Finance data is not available
+4. **Updated Functions**: Modified `download_and_store_historical_data()` and `simulate_with_real_data()` to use Yahoo Finance
+
+### How to Use
+
+#### Prerequisites
+
+Install the Yahoo Finance API:
+```
+pip install yfinance
+```
+
+#### Downloading Data
+
+```python
+# Download Bitcoin data for the last 6 months at 1-hour intervals
+df = download_from_yahoo(symbol="BTC-USD", period="6mo", interval="1h")
+```
+
+#### Valid Symbol Formats
+When using the `download_from_yahoo()` function:
+- Use Yahoo Finance format directly: `BTC-USD`, `ETH-USD`
+- Or use Binance format which will be converted: `BTCUSDT` → `BTC-USD`
+
+#### Available Periods
+- `1d`, `5d`, `1mo`, `3mo`, `6mo`, `1y`, `2y`, `5y`, `10y`, `ytd`, `max`
+
+#### Available Intervals
+- `1m`, `2m`, `5m`, `15m`, `30m`, `60m`, `90m`, `1h`, `1d`, `5d`, `1wk`, `1mo`, `3mo`
+
+### Error Handling
+
+The Yahoo Finance integration includes robust error handling:
+- Empty dataset detection and handling
+- Exception catching for network issues
+- Automatic fallback to simulation when data is unavailable
+- Proper symbol format validation and conversion
+- JSON serialization error prevention
+- Three-tier fallback strategy:
+  1. Try to load from local storage
+  2. If not available, try Yahoo Finance
+  3. If Yahoo Finance fails, use simulation
+
+Additional error resilience features:
+- Data type standardization before storage
+- Metadata serialization protection
+- Graceful handling of missing or malformed data
+- Automatic retry mechanisms when appropriate
+
+### Visualization
+
+The project now includes a plotting function to visualize cryptocurrency price data:
+
+```python
+# Plot Bitcoin price data
+plot_crypto_data('BTCUSDT', '1h')
+```
+
+The plotting system is also robust against data issues:
+- Automatically attempts to retrieve data if not locally available
+- Falls back to downloading if local storage is empty
+- Can generate simulated data if all other sources fail
+- Handles date filtering gracefully
+
+This creates a dual-panel chart showing:
+1. Price movement over time
+2. Volume information
+
+### Data Flow
+
+1. Try to load data from local storage
+2. If not available, download from Yahoo Finance
+3. If download fails, fall back to simulated data
+4. Process and model the data regardless of source
+
+### Data Source Control Options
+
+The project now includes options to control where data comes from:
+
+#### Running Options
+
+In `main.py`, you can set the following flags:
+
+```python
+# 1. Use only stored data without downloading
+use_stored_only = True
+download_new = False
+
+# 2. Use stored data first, download if not available
+use_stored_only = False
+download_new = False
+
+# 3. Download fresh data and use it
+use_stored_only = False
+download_new = True
+```
+
+#### Command Line Usage
+
+Simply run `main.py` after setting your preferences:
+
+```
+python main.py
+```
+
+### Timezone Handling
+
+The system now includes robust timezone handling:
+- Automatically converts timezone-aware timestamps to timezone-naive format
+- Prevents timezone comparison errors when combining data from different sources
+- Maintains consistent timestamp formatting across all data storage and processing
+
+This ensures that data from Yahoo Finance (which may include timezone information) can be seamlessly combined with stored data or simulation data.
+
+### Notes
+
+- Yahoo Finance has different rate limits than Binance, but they are generally sufficient for this project
+- The data format is standardized internally, so all existing model functionality continues to work
+- Historical data downloaded from Yahoo Finance is stored in the same format as before for compatibility
+- The implementation checks for empty datasets to prevent errors in data processing

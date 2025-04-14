@@ -123,15 +123,36 @@ class DataManager:
     def _create_metadata(self, df: pd.DataFrame, symbol: str, interval: str, 
                         timestamp: str) -> Dict:
         """Create metadata dictionary for the dataset"""
+        # Convert missing values dict to ensure all keys are strings
+        missing_values_dict = {}
+        for key, value in df.isna().sum().items():
+            # Convert any non-string keys to strings
+            missing_values_dict[str(key)] = int(value)
+        
+        # Safely get min and max timestamps
+        start_date = df['timestamp'].min()
+        end_date = df['timestamp'].max()
+        
+        # Convert timestamps to strings in a safe manner
+        if isinstance(start_date, pd.Timestamp):
+            start_date = start_date.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            start_date = str(start_date)
+        
+        if isinstance(end_date, pd.Timestamp):
+            end_date = end_date.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            end_date = str(end_date)
+        
         return {
             "symbol": symbol,
             "interval": interval,
             "timestamp": timestamp,
             "rows": len(df),
-            "start_date": df['timestamp'].min().strftime("%Y-%m-%d %H:%M:%S"),
-            "end_date": df['timestamp'].max().strftime("%Y-%m-%d %H:%M:%S"),
-            "columns": list(df.columns),
-            "missing_values": df.isna().sum().to_dict(),
+            "start_date": start_date,
+            "end_date": end_date,
+            "columns": [str(col) for col in df.columns],  # Ensure all column names are strings
+            "missing_values": missing_values_dict,
             "file_version": "1.0"
         }
     
@@ -140,12 +161,40 @@ class DataManager:
         metadata_filename = data_filename.replace('.csv', '_metadata.json')
         metadata_path = os.path.join(self.metadata_dir, metadata_filename)
         
-        with open(metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=4)
+        # Ensure all values are JSON serializable
+        def json_serializable(obj):
+            if isinstance(obj, (datetime, pd.Timestamp)):
+                return obj.strftime("%Y-%m-%d %H:%M:%S")
+            try:
+                # Try standard conversion
+                return str(obj)
+            except Exception:
+                return "Non-serializable object"
+        
+        try:
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=4, default=json_serializable)
+            logging.info(f"Metadata saved to {metadata_path}")
+        except Exception as e:
+            # If serialization still fails, log error and create simplified metadata
+            logging.error(f"Error saving metadata: {str(e)}")
+            simplified_metadata = {
+                "symbol": metadata.get("symbol", "unknown"),
+                "interval": metadata.get("interval", "unknown"),
+                "timestamp": metadata.get("timestamp", "unknown"),
+                "rows": metadata.get("rows", 0),
+                "file_version": "1.0"
+            }
+            try:
+                with open(metadata_path, 'w') as f:
+                    json.dump(simplified_metadata, f, indent=4)
+                logging.info(f"Simplified metadata saved to {metadata_path}")
+            except Exception as e2:
+                logging.error(f"Failed to save even simplified metadata: {str(e2)}")
     
     def load_data(self, symbol: str, interval: str, 
-                  start_date: Optional[str] = None,
-                  end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
+                  start_date: Optional[Union[str, datetime]] = None,
+                  end_date: Optional[Union[str, datetime]] = None) -> Optional[pd.DataFrame]:
         """
         Load data for given symbol and interval within date range
         
@@ -155,10 +204,10 @@ class DataManager:
             Trading pair symbol
         interval : str
             Time interval
-        start_date : str, optional
-            Start date in 'YYYY-MM-DD' format
-        end_date : str, optional
-            End date in 'YYYY-MM-DD' format
+        start_date : str or datetime, optional
+            Start date in 'YYYY-MM-DD' format or as datetime object
+        end_date : str or datetime, optional
+            End date in 'YYYY-MM-DD' format or as datetime object
             
         Returns:
         --------
@@ -181,22 +230,44 @@ class DataManager:
         # Load and combine data
         dfs = []
         for file in files:
-            df = pd.read_csv(os.path.join(self.raw_dir, file))
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            
-            # Apply date filters if provided
-            if start_date:
-                df = df[df['timestamp'] >= start_date]
-            if end_date:
-                df = df[df['timestamp'] <= end_date]
+            try:
+                df = pd.read_csv(os.path.join(self.raw_dir, file))
                 
-            dfs.append(df)
+                # Convert timestamp to datetime and handle timezone issues
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                
+                # Make all timestamps timezone-naive by converting timezone-aware ones
+                if df['timestamp'].dt.tz is not None:
+                    df['timestamp'] = df['timestamp'].dt.tz_localize(None)
+                
+                # Apply date filters if provided
+                if start_date:
+                    df = df[df['timestamp'] >= start_date]
+                if end_date:
+                    df = df[df['timestamp'] <= end_date]
+                    
+                dfs.append(df)
+            except Exception as e:
+                logging.error(f"Error loading file {file}: {str(e)}")
+                continue
         
         # Combine all dataframes
         if dfs:
-            combined_df = pd.concat(dfs)
-            combined_df = combined_df.drop_duplicates().sort_values('timestamp')
-            return combined_df
+            try:
+                combined_df = pd.concat(dfs)
+                
+                # Ensure all timestamps are timezone-naive before sorting
+                if combined_df['timestamp'].dt.tz is not None:
+                    combined_df['timestamp'] = combined_df['timestamp'].dt.tz_localize(None)
+                    
+                # Drop duplicates and sort
+                combined_df = combined_df.drop_duplicates().sort_values('timestamp')
+                return combined_df
+            except Exception as e:
+                logging.error(f"Error combining dataframes: {str(e)}")
+                # If combining fails, return the most recent dataset
+                if dfs:
+                    return dfs[-1]
         
         return None
     
