@@ -1,20 +1,23 @@
 # Cryptocurrency Trading Bot Documentation
 
 ## Overview
-A machine learning-based cryptocurrency trading bot that uses historical price data to predict future price movements. The system can work with both real Binance data and simulated data for testing purposes.
+A machine learning-based cryptocurrency trading bot that uses historical price data to predict future price movements. The system can work with multiple data sources including CoinGecko, Yahoo Finance, Binance API, and simulated data for testing purposes.
 
 ## System Components
 
-### Data Collection (`data_collector.py`, `data_simulator.py`)
+### Data Collection (`data_collector.py`, `data_simulator.py`, `data_downloader.py`)
 - `BinanceCollector`: Fetches historical data from Binance API
 - `DataSimulator`: Generates synthetic market data for testing
 - `DataCollector`: Manages data sourcing from either Binance or simulation
+- `download_from_coingecko()`: Fetches data from CoinGecko API
+- `download_from_yahoo()`: Fetches data from Yahoo Finance API
 
-### Data Management (`data_manager.py`, `data_storage.py`)
+### Data Management (`data_manager.py`, `data_storage.py`, `data_utils.py`)
 - Handles data persistence and retrieval
 - Maintains organized storage structure
 - Supports metadata tracking
 - Implements data validation and cleanup
+- Provides utilities for finding the best/cleanest dataset
 
 ### Feature Engineering (`feature_engineer.py`)
 Calculates technical indicators:
@@ -28,82 +31,133 @@ Calculates technical indicators:
 - Creates sequence data for LSTM model
 - Handles inverse transformation for predictions
 
-### Model Architecture (`model_builder.py`)
+### Model Architecture (`model_builder.py`, `model_utils.py`)
 LSTM neural network with:
 - 3 LSTM layers (50 units each)
 - Dropout layers (0.2)
 - Dense output layer
 - Adam optimizer
+- Model persistence and loading
 
 ### Price Prediction (`predictor.py`)
 - Handles model inference
 - Transforms predictions back to original scale
+- Generates future price predictions
+
+### Visualization (`visualization.py`)
+- Plot cryptocurrency price history
+- Display technical indicators
+- Visualize model predictions
+- Compare actual vs predicted prices
+- Interactive plots for analysis
+
+### Web Application (`app.py`)
+- Interactive interface for the trading bot
+- Data visualization dashboard
+- Model training and prediction controls
+- Automated data refresh and processing
+- Configurable settings for different trading strategies
 
 ## Setup Requirements
 
 ### Dependencies
-- Python 3.x
-- TensorFlow
+- Python 3.8+
+- TensorFlow 2.x
 - pandas
 - numpy
-- python-binance
+- pycoingecko
+- yfinance (optional)
+- python-binance (optional)
 - scikit-learn
+- matplotlib
+- plotly
 
 ### Environment Variables
 Required in `.env` file:
 ```
-API_KEY=your_binance_api_key
-API_SECRET=your_binance_api_secret
+API_KEY=your_binance_api_key (optional)
+API_SECRET=your_binance_api_secret (optional)
 ```
 
 ## Usage Examples
 
-### Using Real Data
+### Using Real Data from CoinGecko
 ```python
-collector = DataCollector(api_key, api_secret)
-data = collector.get_historical_data(
-    symbol="BTCUSDT",
-    interval="1h",
-    start_str="1 month ago UTC"
-)
+# Download Bitcoin data for the last 90 days at hourly intervals
+df = download_from_coingecko(symbol="BTC", days=90, interval="hourly")
 ```
 
-### Using Simulated Data
-```python
-collector = DataCollector(use_simulation=True)
-data = collector.get_historical_data(
-    symbol="BTCUSDT",
-    interval="1h",
-    start_str="1 month ago UTC"
-)
+### Using the Web Application
+```
+# Run the web application
+python app.py
 ```
 
-### Data Storage
+### Processing Multiple Intervals
 ```python
 data_manager = DataManager()
-data_manager.save_raw_data(df, "BTCUSDT", "1h")
-stored_data = data_manager.load_data("BTCUSDT", "1h")
+process_with_intervals(
+    data_manager=data_manager,
+    symbol="BTCUSDT",
+    intervals=["1h", "4h"],
+    use_stored_only=False,
+    use_saved_model=True
+)
+```
+
+### Using Advanced Visualization
+```python
+# Visualize price predictions
+plot_crypto_data_with_predictions(
+    df=df,
+    symbol=symbol, 
+    interval=interval,
+    pred_dates=pred_dates,
+    predicted_prices=predicted_prices,
+    future_dates=future_dates,
+    future_predictions=future_predictions
+)
 ```
 
 ## Directory Structure
 ```
-crypto_data/
-├── raw/           # Raw market data
-├── processed/     # Processed datasets
-├── cache/         # Temporary data
-└── metadata/      # Data metadata files
+project_root/
+├── app.py                # Web application entry point
+├── main.py               # CLI entry point
+├── data_collector.py     # Data collection from Binance
+├── data_downloader.py    # Data downloading from CoinGecko/Yahoo
+├── data_simulator.py     # Data simulation utilities
+├── data_manager.py       # Data persistence management
+├── data_storage.py       # Data storage operations
+├── data_utils.py         # Data utility functions
+├── data_preprocessor.py  # Data preprocessing
+├── feature_engineer.py   # Technical indicator calculation
+├── model_builder.py      # Model architecture definition
+├── model_utils.py        # Model training and evaluation
+├── predictor.py          # Price prediction
+├── visualization.py      # Data visualization
+├── requirements.txt      # Project dependencies
+├── .env                  # Environment variables
+└── crypto_data/          # Data storage directory
+    ├── raw/              # Raw market data
+    ├── processed/        # Processed datasets
+    ├── cache/            # Temporary data
+    └── metadata/         # Data metadata files
+└── saved_models/         # Stored trained models
 ```
 
 ## Error Handling
 - Data validation checks
 - Logging system for tracking operations
 - Graceful fallbacks for API failures
+- Automatic switch between data sources
 
 ## Performance Considerations
 - Efficient data storage and retrieval
 - Caching support
 - Cleanup of old data
 - Memory-efficient data processing
+- Model checkpointing for resuming training
 
 ## Data Source Migration: From Binance to Yahoo Finance
 
@@ -235,3 +289,153 @@ This ensures that data from Yahoo Finance (which may include timezone informatio
 - The data format is standardized internally, so all existing model functionality continues to work
 - Historical data downloaded from Yahoo Finance is stored in the same format as before for compatibility
 - The implementation checks for empty datasets to prevent errors in data processing
+
+## Data Source Migration: From Yahoo Finance to CoinGecko
+
+### Overview
+
+The project has been updated to use CoinGecko as the data source for cryptocurrency price data. This change improves data reliability and provides access to more cryptocurrency data. This document outlines the changes made and how to use the updated functionality.
+
+### Key Changes
+
+1. **New Data Source**: Added `download_from_coingecko()` function to retrieve data from CoinGecko API
+2. **Symbol Format**: Added automatic conversion between Binance symbol format (e.g., 'BTCUSDT') and CoinGecko format (e.g., 'bitcoin')
+3. **Fallback Mechanism**: Implemented a fallback to simulated data if CoinGecko data is not available
+4. **Updated Functions**: Modified all relevant functions to use CoinGecko instead of Yahoo Finance
+
+### How to Use
+
+#### Prerequisites
+
+Install the CoinGecko API:
+```
+pip install pycoingecko
+```
+
+#### Downloading Data
+
+```python
+# Download Bitcoin data for the last 90 days at hourly intervals
+df = download_from_coingecko(symbol="BTC", days=90, interval="hourly")
+```
+
+#### Valid Symbol Formats
+When using the `download_from_coingecko()` function:
+- Use common crypto symbols: `BTC`, `ETH`
+- Or use Binance format which will be converted: `BTCUSDT` → `BTC`
+- Or use Yahoo Finance format which will be converted: `BTC-USD` → `BTC`
+
+#### Available Time Periods
+- For hourly data: 1-90 days
+- For daily data: 1-365 days
+
+#### Available Intervals
+- `hourly` or `1h` - Hourly data (limited to 90 days)
+- `daily` or `1d` - Daily data (up to 365 days)
+
+### Data Handling
+
+The CoinGecko API provides the following data:
+- Timestamp and close price
+- Volume data
+
+However, it doesn't provide open, high, and low prices directly. To maintain compatibility with the existing codebase:
+- Open prices are derived from previous close prices
+- High and low prices are estimated as +/- 1% of close prices
+
+### Error Handling
+
+The CoinGecko integration includes robust error handling:
+- Empty dataset detection and handling
+- Exception catching for network issues
+- Automatic fallback to simulation when data is unavailable
+- Proper symbol format validation and conversion
+- Rate limiting awareness
+
+## Web Application Integration
+
+### Overview
+
+The project now includes an interactive web application that provides a user-friendly interface for the trading bot. This allows for easier data visualization, model training, and price prediction without requiring programming knowledge.
+
+### Features
+
+1. **Interactive Dashboard**: Visualize cryptocurrency price data and predictions
+2. **Model Training Interface**: Train and evaluate models with different parameters
+3. **Real-time Predictions**: Generate and visualize future price predictions
+4. **Data Source Selection**: Choose between CoinGecko, Yahoo Finance, or simulated data
+5. **Configuration Options**: Customize data parameters, model settings, and visualization options
+
+### Running the Application
+
+```bash
+python app.py
+```
+
+The application will be available at http://localhost:5000 by default.
+
+### Application Flow
+
+1. Select cryptocurrency (e.g., BTC, ETH)
+2. Choose time interval (hourly, daily)
+3. Select data source or use stored data
+4. View historical data and technical indicators
+5. Train a new model or use a saved model
+6. Generate and visualize price predictions
+7. Export results and predictions
+
+### Automated Processing
+
+The application includes automated processing features:
+- Scheduled data updates
+- Periodic model retraining
+- Automated trading signal generation
+- Performance reporting and alerts
+
+## Model Evaluation and Performance Metrics
+
+### Overview
+
+The project now includes comprehensive model evaluation capabilities to assess prediction accuracy and performance. These metrics help users understand the reliability of the predictions and make informed trading decisions.
+
+### Implemented Metrics
+
+1. **Mean Absolute Error (MAE)**: Average absolute difference between predictions and actual values
+2. **Root Mean Square Error (RMSE)**: Square root of the average squared differences
+3. **Mean Absolute Percentage Error (MAPE)**: Percentage error relative to actual values
+4. **Directional Accuracy**: Percentage of correct price movement direction predictions
+5. **Profit/Loss Simulation**: Simulated trading results based on model predictions
+
+### Visualization
+
+The evaluation results are visualized through:
+- Error distribution charts
+- Prediction vs. actual price comparison
+- Confusion matrix for directional accuracy
+- Profit/loss over time charts
+- Performance comparison between different models
+
+### Usage
+
+```python
+# Evaluate model performance
+metrics = evaluate_model_performance(
+    model=model,
+    X_test=X_test,
+    y_test=y_test,
+    scaler=preprocessor.scaler
+)
+
+# Display evaluation results
+print_evaluation_metrics(metrics)
+
+# Visualize evaluation results
+plot_evaluation_results(
+    actual_prices=actual_prices,
+    predicted_prices=predicted_prices,
+    symbol=symbol,
+    interval=interval
+)
+```
+
+The evaluation system provides insights into model strengths and weaknesses, helping users refine their trading strategies based on prediction reliability.

@@ -80,5 +80,9 @@ class DataPreprocessor:
         dummy[:, 0] = data
         # Inverse transform and convert to dense array if needed
         result = self.scaler.inverse_transform(dummy)
+        # Debug print to check values
+        if len(data) < 10:  # Only print for small arrays to avoid console spam
+            original_values = np.asarray(result)[:, 0]
+            print(f"DEBUG - Inverse transformed values: min={min(original_values):.2f}, max={max(original_values):.2f}, sample={original_values[:3]}")
         return np.asarray(result)[:, 0]
 
