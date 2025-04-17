@@ -63,7 +63,7 @@ class FeatureEngineer:
             # First try interpolation
             df_copy[col] = df_copy[col].interpolate(method='linear', limit_direction='both')
             # Then use forward-fill and backward-fill for any remaining NaNs
-            df_copy[col] = df_copy[col].fillna(method='ffill').fillna(method='bfill')
+            df_copy[col] = df_copy[col].ffill().ffill()
             # If still have NaNs (e.g., at the start), fill with reasonable defaults
             if col == 'RSI':
                 df_copy[col] = df_copy[col].fillna(50)  # Neutral RSI

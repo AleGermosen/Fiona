@@ -2,6 +2,7 @@
 from sklearn.preprocessing import MinMaxScaler, RobustScaler
 import numpy as np
 import pandas as pd
+from datetime import datetime
 
 class DataPreprocessor:
     def __init__(self):
@@ -29,7 +30,7 @@ class DataPreprocessor:
         # Replace infinity values with NaN
         for col in features:
             if col in df_copy.columns:
-                df_copy[col].replace([np.inf, -np.inf], np.nan, inplace=True)
+                df_copy[col] = df_copy[col].replace([np.inf, -np.inf], np.nan)
         
         # Check for NaN values and fill them
         if df_copy[features].isna().any().any():
@@ -37,7 +38,7 @@ class DataPreprocessor:
             # Try to interpolate first
             df_copy[features] = df_copy[features].interpolate(method='linear', limit_direction='both')
             # If still have NaNs, use forward fill and backward fill
-            df_copy[features] = df_copy[features].fillna(method='ffill').fillna(method='bfill')
+            df_copy[features] = df_copy[features].ffill().ffill()
             # If still have NaNs, fill with zeros
             df_copy[features] = df_copy[features].fillna(0)
         
@@ -80,9 +81,6 @@ class DataPreprocessor:
         dummy[:, 0] = data
         # Inverse transform and convert to dense array if needed
         result = self.scaler.inverse_transform(dummy)
-        # Debug print to check values
-        if len(data) < 10:  # Only print for small arrays to avoid console spam
-            original_values = np.asarray(result)[:, 0]
-            print(f"DEBUG - Inverse transformed values: min={min(original_values):.2f}, max={max(original_values):.2f}, sample={original_values[:3]}")
+        # Remove debug prints to avoid multiple logs
         return np.asarray(result)[:, 0]
 

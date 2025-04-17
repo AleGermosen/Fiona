@@ -30,7 +30,7 @@ def save_model(model, symbol: str, interval: str) -> Optional[str]:
     """
     model_dir = "saved_models"
     os.makedirs(model_dir, exist_ok=True)
-    model_path = os.path.join(model_dir, f"{symbol}_{interval}_model.h5")
+    model_path = os.path.join(model_dir, f"{symbol}_{interval}_model.keras")
     
     try:
         # Save the full model (which includes architecture)
@@ -61,7 +61,7 @@ def load_saved_model(symbol: str, interval: str) -> Optional[Any]:
         Loaded model or None if loading failed
     """
     model_dir = "saved_models"
-    model_path = os.path.join(model_dir, f"{symbol}_{interval}_model.h5")
+    model_path = os.path.join(model_dir, f"{symbol}_{interval}_model.keras")
     weights_path = os.path.join(model_dir, f"{symbol}_{interval}_weights")
     
     if os.path.exists(model_path):
@@ -135,7 +135,7 @@ def delete_saved_models(symbol: Optional[str] = None, interval: Optional[str] = 
     
     if symbol and interval:
         # Delete specific model
-        model_path = os.path.join(model_dir, f"{symbol}_{interval}_model.h5")
+        model_path = os.path.join(model_dir, f"{symbol}_{interval}_model.keras")
         weights_path = os.path.join(model_dir, f"{symbol}_{interval}_weights")
         
         if os.path.exists(model_path):
@@ -157,10 +157,10 @@ def delete_saved_models(symbol: Optional[str] = None, interval: Optional[str] = 
                 print(f"Deleted {wf}")
     else:
         # Delete all models
-        # Delete all .h5 files
-        h5_files = glob.glob(os.path.join(model_dir, "*.h5"))
+        # Delete all .keras files
+        keras_files = glob.glob(os.path.join(model_dir, "*.keras"))
         
-        for file in h5_files:
+        for file in keras_files:
             os.remove(file)
             files_deleted += 1
             print(f"Deleted {file}")
@@ -251,7 +251,7 @@ def train_model(model, X_train, y_train, epochs: int = 20, batch_size: int = 32,
 
 
 def get_or_train_model(X, X_train, y_train, symbol: str, interval: str, 
-                      use_saved_model: bool = True) -> Optional[Any]:
+                     use_saved_model: bool = True, use_pretrained_only: bool = False) -> Optional[Any]:
     """
     Get a saved model or train a new one.
     
@@ -262,6 +262,7 @@ def get_or_train_model(X, X_train, y_train, symbol: str, interval: str,
         symbol: The trading pair symbol
         interval: Time interval
         use_saved_model: Whether to try loading a saved model
+        use_pretrained_only: Whether to only use pre-trained models and not train new ones
         
     Returns:
         Trained model or None if failed
@@ -273,6 +274,11 @@ def get_or_train_model(X, X_train, y_train, symbol: str, interval: str,
     
     # If no saved model available or not using saved models, train a new one
     if model is None:
+        if use_pretrained_only:
+            print(f"No pre-trained model available for {symbol} at {interval} interval and use_pretrained_only is enabled.")
+            print(f"Skipping {interval} interval. Run pretrain_models.py to train models for all intervals.")
+            return None
+            
         print("Creating and training a new model...")
         
         from model_builder import ModelBuilder
@@ -293,7 +299,8 @@ def get_or_train_model(X, X_train, y_train, symbol: str, interval: str,
         model, _ = train_model(model, X_train, y_train)
         
         # Save the trained model
-        save_model(model, symbol, interval)
+        # save_model(model, symbol, interval)
+        model.save("saved_models/{}_{}_model.keras".format(symbol, interval))
     else:
         print("Using previously trained model for predictions")
     
@@ -317,40 +324,26 @@ def generate_future_predictions(predictor, preprocessor, X, df,
         Tuple of (future_predictions, future_dates)
     """
     import pandas as pd
+    import numpy as np
+    import logging
+    from feature_engineer import FeatureEngineer
     
-    print("Generating future predictions...")
+    logger = logging.getLogger("crypto_prediction")
+    logger.info(f"Generating {future_count} future predictions for {interval} timeframe...")
     
-    future_predictions = []
-    last_sequence = X[-1:]
-    
-    for _ in range(future_count):
-        # Predict next price
-        next_pred = predictor.predict_next_price(last_sequence)
-        future_predictions.append(next_pred)
-        
-        # Update sequence for next prediction
-        new_seq = last_sequence[0].copy()
-        # Shift values
-        new_seq[:-1] = new_seq[1:]
-        
-        # Create scaled version of prediction for next sequence
-        dummy = np.zeros((1, preprocessor.scaler.n_features_in_))
-        dummy[0, 0] = next_pred
-        scaled_result = np.asarray(preprocessor.scaler.transform(dummy))
-        scaled_pred = float(scaled_result[0, 0])
-        
-        # Update last value in sequence
-        new_seq[-1, 0] = scaled_pred
-        
-        # Update sequence for next iteration
-        last_sequence = np.array([new_seq])
-    
-    # Generate future dates
+    # Generate future dates first
     last_date = df['timestamp'].iloc[-1]
     
     # Determine the time interval in hours
     interval_hours = 1
-    if interval == '4h':
+    if interval.startswith("combined_"):
+        # For combined datasets, use the base interval (after "combined_")
+        base_interval = interval.split("_")[1]
+        if base_interval == '4h':
+            interval_hours = 4
+        elif base_interval == '1d':
+            interval_hours = 24
+    elif interval == '4h':
         interval_hours = 4
     elif interval == '1d':
         interval_hours = 24
@@ -360,5 +353,62 @@ def generate_future_predictions(predictor, preprocessor, X, df,
         periods=future_count+1, 
         freq=f'{interval_hours}h'
     )[1:]  # Skip the first one which is the last actual data point
+    
+    # Create a copy of the dataframe with only the necessary columns
+    future_df = df.copy()
+    
+    # Initialize list for future predictions
+    future_predictions = []
+    
+    # Get the current sequence for the first prediction
+    last_sequence = X[-1:].copy()
+    
+    # Create feature engineer for updating technical indicators
+    feature_engineer = FeatureEngineer()
+    
+    # Generate one prediction per future date/timeframe
+    for i, future_date in enumerate(future_dates):
+        # Predict next price using the current sequence
+        next_pred = predictor.predict_next_price(last_sequence)
+        future_predictions.append(next_pred)
+        
+        # Log the prediction with timeframe information
+        logger.info(f"Predicted price for {future_date.strftime('%Y-%m-%d %H:%M:%S')}: ${next_pred:.2f}")
+        
+        # Only update the sequence if we have more predictions to make
+        if i < len(future_dates) - 1:
+            # Add the predicted price to our future dataframe
+            new_row = pd.DataFrame({
+                'timestamp': [future_date],
+                'open': [next_pred],  # Using predicted close as open
+                'high': [next_pred * 1.001],  # Slight adjustment for simulation
+                'low': [next_pred * 0.999],   # Slight adjustment for simulation
+                'close': [next_pred],
+                'volume': [future_df['volume'].tail(30).mean()]  # Use avg of recent volume
+            })
+            
+            # Append to the dataframe
+            future_df = pd.concat([future_df, new_row], ignore_index=True)
+            
+            # Recalculate all technical indicators with the new price data
+            future_df = feature_engineer.add_technical_indicators(future_df)
+            
+            # Extract the latest row with all indicators
+            latest_features = future_df.iloc[-1][['close', 'volume', 'MA7', 'MA14', 'MA30', 'RSI', 'MACD', 'Signal_Line', 'Volatility']].values
+            
+            # Scale the new features (match how the original features were processed)
+            dummy = np.zeros((1, len(latest_features)))
+            dummy[0, :] = latest_features
+            scaled_features = preprocessor.scaler.transform(dummy)[0]
+            
+            # Update the sequence for the next iteration
+            new_seq = last_sequence[0].copy()
+            # Shift the values (remove oldest, make room for newest)
+            new_seq[:-1] = new_seq[1:]
+            # Add the new features as the last element in the sequence
+            new_seq[-1, :] = scaled_features
+            
+            # Update the sequence for the next prediction
+            last_sequence = np.array([new_seq])
     
     return future_predictions, future_dates 

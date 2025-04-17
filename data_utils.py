@@ -172,18 +172,77 @@ def prepare_data_for_modeling(df: pd.DataFrame, start_date: Optional[str] = None
     return df
 
 
+def remove_outliers(df: pd.DataFrame, columns: List[str] = ['open', 'high', 'low', 'close'], method: str = 'iqr', threshold: float = 3.0) -> pd.DataFrame:
+    """
+    Remove outliers from dataframe columns using statistical methods.
+    
+    Args:
+        df: DataFrame with cryptocurrency data
+        columns: List of column names to check for outliers
+        method: Method to use ('zscore' or 'iqr')
+        threshold: Threshold for outlier detection (z-score or IQR multiplier)
+        
+    Returns:
+        DataFrame with outliers removed
+    """
+    if df is None or df.empty:
+        return df
+    
+    # Make a copy to avoid modifying the original
+    df_clean = df.copy()
+    original_len = len(df_clean)
+    
+    # Process each specified column
+    for col in columns:
+        if col not in df_clean.columns:
+            continue
+            
+        # Ensure column is numeric
+        if df_clean[col].dtype == 'object':
+            df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
+        
+        # Skip if column has all NaN values
+        if df_clean[col].isna().all():
+            continue
+            
+        if method == 'zscore':
+            # Z-score method
+            from scipy import stats
+            z_scores = stats.zscore(df_clean[col], nan_policy='omit')
+            abs_z_scores = np.abs(z_scores)
+            outlier_mask = abs_z_scores > threshold
+            df_clean = df_clean[~outlier_mask]
+            
+        elif method == 'iqr':
+            # IQR method
+            Q1 = df_clean[col].quantile(0.25)
+            Q3 = df_clean[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - threshold * IQR
+            upper_bound = Q3 + threshold * IQR
+            df_clean = df_clean[(df_clean[col] >= lower_bound) & (df_clean[col] <= upper_bound)]
+    
+    # Check how many rows were removed
+    removed = original_len - len(df_clean)
+    if removed > 0:
+        print(f"Removed {removed} outliers ({removed/original_len:.1%} of data)")
+    
+    return df_clean
+
+
 def find_cleanest_dataset(data_manager, symbol: str = 'BTCUSDT', 
                         preferred_interval: str = '1h') -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """
-    Find the cleanest dataset available for a given symbol.
+    Find and clean the best dataset available for a given symbol,
+    prioritizing recent data and removing outliers.
     
     Args:
         data_manager: DataManager instance to handle data loading
         symbol: The trading pair symbol (e.g., 'BTCUSDT')
-        preferred_interval: The preferred interval if multiple clean datasets exist
+        preferred_interval: The preferred interval to use if available
         
     Returns:
-        Tuple containing (DataFrame, interval) with the cleanest dataset and its interval
+        Tuple containing (DataFrame, interval) with the cleaned dataset and its interval
     """
     # Get available intervals
     intervals = data_manager.get_available_intervals(symbol)
@@ -196,41 +255,72 @@ def find_cleanest_dataset(data_manager, symbol: str = 'BTCUSDT',
         intervals.remove(preferred_interval)
         intervals.insert(0, preferred_interval)
     
-    best_df = None
-    best_interval = None
-    best_score = -1  # Higher is better
-    
+    # Load and evaluate all datasets
+    datasets = {}
     for interval in intervals:
         df = data_manager.load_data(symbol, interval)
         if df is None or df.empty:
             continue
         
+        # Get the date range
+        start_date = df['timestamp'].min()
+        end_date = df['timestamp'].max()
+        
         # Evaluate data quality
         score, details = evaluate_data_quality(df)
         
-        # Clean the data to see how many rows would remain
+        # Clean the data and remove outliers
         df_clean = clean_dataframe(df)
+        df_clean = remove_outliers(df_clean)
         
-        print(f"Interval {interval}: score {score:.1f}, {len(df_clean)} clean rows")
+        # Store the cleaned dataset with metadata
+        datasets[interval] = {
+            'df': df_clean,
+            'score': score,
+            'start_date': start_date,
+            'end_date': end_date,
+            'row_count': len(df_clean)
+        }
         
-        # If we're at a perfect score or very close, just use this dataset
-        if score >= 95:
-            return df_clean, interval
-            
-        # Track the best dataset
-        if score > best_score:
-            best_score = score
-            best_df = df_clean
-            best_interval = interval
+        print(f"Interval {interval}: score {score:.1f}, {len(df_clean)} clean rows, date range: {start_date.strftime('%Y-%m-%d %H:%M:%S')} to {end_date.strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # If we found a good dataset
-    if best_score > 50 and best_df is not None:
-        print(f"Selected {best_interval} data (score: {best_score:.1f})")
-        return best_df, best_interval
+    if not datasets:
+        print("No valid datasets found")
+        return None, None
+        
+    # Find most recent data across all datasets
+    most_recent_date = max([info['end_date'] for info in datasets.values()])
+    print(f"Most recent date across all datasets: {most_recent_date.strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # If all datasets were problematic, return None
-    print("All datasets had significant issues.")
-    return None, None
+    # Define threshold for recency: data must be from the last 30 days to be considered "recent"
+    recency_threshold = most_recent_date - pd.Timedelta(days=30)
+    print(f"Using recency threshold: {recency_threshold.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # Find datasets with recent data
+    recent_datasets = {
+        interval: info for interval, info in datasets.items() 
+        if info['end_date'] >= recency_threshold
+    }
+    
+    if recent_datasets:
+        print(f"Found {len(recent_datasets)} datasets with recent data")
+        
+        # If preferred interval is in recent datasets, use it
+        if preferred_interval in recent_datasets:
+            print(f"Using preferred interval {preferred_interval} with recent data")
+            return recent_datasets[preferred_interval]['df'], preferred_interval
+        
+        # Otherwise find the dataset with the most recent end date
+        most_recent_interval = max(recent_datasets.items(), key=lambda x: x[1]['end_date'])[0]
+        print(f"Using most recent dataset: {most_recent_interval}, end date: {recent_datasets[most_recent_interval]['end_date'].strftime('%Y-%m-%d %H:%M:%S')}")
+        return recent_datasets[most_recent_interval]['df'], most_recent_interval
+    
+    # If no dataset meets the recency requirement, 
+    # strongly favor recency over data quality
+    print("No datasets meet the recency threshold, falling back to most recent dataset")
+    most_recent_interval = max(datasets.items(), key=lambda x: x[1]['end_date'])[0]
+    print(f"Using most recent dataset: {most_recent_interval}, end date: {datasets[most_recent_interval]['end_date'].strftime('%Y-%m-%d %H:%M:%S')}")
+    return datasets[most_recent_interval]['df'], most_recent_interval
 
 
 def list_available_data(data_manager) -> None:
@@ -368,3 +458,57 @@ def view_stored_data(data_manager, symbol: str = 'BTCUSDT', interval: str = '1h'
         print(f"Total valid periods: {len(df)}")
     
     return df 
+
+
+def join_timeframe_datasets(data_manager, symbol: str = 'BTCUSDT', 
+                          intervals: List[str] = ['1h', '4h', '1d']) -> Optional[pd.DataFrame]:
+    """
+    Join data from multiple timeframes into a single dataset for a given symbol.
+    
+    This function loads data for each specified interval, combines them into a single 
+    DataFrame, removes duplicates, and ensures all data is properly sorted by timestamp.
+    
+    Args:
+        data_manager: DataManager instance to handle data loading
+        symbol: The trading pair symbol (e.g., 'BTCUSDT')
+        intervals: List of time intervals to join (e.g., ['1h', '4h', '1d'])
+        
+    Returns:
+        Combined DataFrame with data from all specified intervals, or None if no data is available
+    """
+    all_dfs = []
+    
+    for interval in intervals:
+        df = data_manager.load_data(symbol, interval)
+        if df is not None and not df.empty:
+            print(f"Loaded {len(df)} rows of {symbol} data at {interval} interval")
+            # Ensure timestamp is datetime
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            # Add interval info to distinguish source in case it's needed later
+            df['source_interval'] = interval
+            all_dfs.append(df)
+        else:
+            print(f"No data available for {symbol} at {interval} interval")
+    
+    if not all_dfs:
+        print(f"No data available for {symbol} across any of the specified intervals")
+        return None
+    
+    # Combine all dataframes
+    combined_df = pd.concat(all_dfs, ignore_index=True)
+    
+    # Ensure all timestamps are timezone-naive before processing
+    if combined_df['timestamp'].dt.tz is not None:
+        combined_df['timestamp'] = combined_df['timestamp'].dt.tz_localize(None)
+    
+    # Drop duplicates based on timestamp
+    # If multiple intervals have the same timestamp, keep the one with the smaller interval
+    # This prioritizes more granular data (e.g., 1h over 4h over 1d)
+    combined_df = combined_df.sort_values(['timestamp', 'source_interval'])
+    combined_df = combined_df.drop_duplicates(subset=['timestamp'], keep='first')
+    
+    # Sort by timestamp for final dataset
+    combined_df = combined_df.sort_values('timestamp').reset_index(drop=True)
+    
+    print(f"Combined dataset has {len(combined_df)} rows after removing duplicates")
+    return combined_df 

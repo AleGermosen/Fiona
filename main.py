@@ -52,9 +52,10 @@ if __name__ == "__main__":
     use_stored_only = False
     download_new = True
     list_only = False
-    use_best_data = True
-    use_saved_model = True
+    use_combined_timeframes = True
+    use_best_data = False
     reset_models = False
+    use_saved_model = True
     
     if len(sys.argv) > 1:
         if "--list-only" in sys.argv:
@@ -65,15 +66,25 @@ if __name__ == "__main__":
             use_stored_only = True
         if "--reset-models" in sys.argv:
             reset_models = True
+        if "--use-pretrained-only" in sys.argv:  # New option
+            use_pretrained_only = True
+            use_saved_model = True  # Force this to be true
+        if "--pretrain-all" in sys.argv:  # New option
+            pretrain_all = True
+        if "--use-combined-timeframes" in sys.argv:  # New option
+            use_combined_timeframes = True
         if "--help" in sys.argv:
             print("Cryptocurrency Price Prediction Tool")
             print("Usage: python main.py [options]")
             print("Options:")
-            print("  --list-only        Only list available data without analysis")
-            print("  --download-new     Download fresh data")
-            print("  --use-stored-only  Only use stored data without downloading")
-            print("  --reset-models     Delete existing models and train new ones")
-            print("  --help             Display this help message")
+            print("  --list-only               Only list available data without analysis")
+            print("  --download-new            Download fresh data")
+            print("  --use-stored-only         Only use stored data without downloading")
+            print("  --reset-models            Delete existing models and train new ones")
+            print("  --use-pretrained-only     Only use pre-trained models, don't train new ones")
+            print("  --pretrain-all            Pre-train models for all intervals before analysis")
+            print("  --use-combined-timeframes Join 1h, 4h, and 1d data before training")
+            print("  --help                    Display this help message")
             sys.exit(0)
     
     try:
@@ -84,11 +95,9 @@ if __name__ == "__main__":
             list_only=list_only,
             use_best_data=use_best_data,
             use_saved_model=use_saved_model,
-            reset_models=reset_models
+            reset_models=reset_models,
+            use_combined_timeframes=use_combined_timeframes
         )
     except NameError:
         # If run_with_options is not defined, we're in legacy mode
         logger.warning("Using legacy implementation")
-        
-        # The legacy run_with_options function would be defined here if imports failed
-        # But we're keeping the existing code in place

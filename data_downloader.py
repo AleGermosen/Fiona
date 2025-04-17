@@ -100,7 +100,7 @@ def download_from_coingecko(symbol: str, days: int = 90, interval: str = "hourly
         df['open'] = df['close'].shift(1)
         # For the first row with NaN after shift
         if pd.isna(df['open'].iloc[0]):
-            df['open'].iloc[0] = df['close'].iloc[0]
+            df.loc[0, 'open'] = df['close'].iloc[0]
         
         # Create synthetic high and low
         # Assuming a price variation of around 2% from close price for high and low

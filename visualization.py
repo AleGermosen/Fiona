@@ -11,6 +11,7 @@ import pandas as pd
 from typing import Optional, List, Dict, Any, Tuple, Union
 import matplotlib.dates as mdates
 from matplotlib.figure import Figure
+from datetime import datetime
 
 
 def setup_price_figure(figsize: Tuple[int, int] = (12, 8)) -> Tuple[Figure, Any, Any]:
@@ -140,17 +141,19 @@ def debug_price_ranges(historical_prices: List[float], predicted_prices: List[fl
         historical_prices: List of historical prices
         predicted_prices: List of predicted prices
     """
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     hist_min, hist_max = min(historical_prices), max(historical_prices)
-    print(f"Historical price range: min=${hist_min:.2f}, max=${hist_max:.2f}")
+    print(f"DEBUG [{current_time}] - Historical price range: min=${hist_min:.2f}, max=${hist_max:.2f}")
     
     if predicted_prices:
         pred_min, pred_max = min(predicted_prices), max(predicted_prices)
-        print(f"Predicted price range: min=${pred_min:.2f}, max=${pred_max:.2f}")
+        print(f"DEBUG [{current_time}] - Predicted price range: min=${pred_min:.2f}, max=${pred_max:.2f}")
         
         # Check if predicted range is substantially different
         if abs(pred_max - pred_min) < 0.01 * abs(hist_max - hist_min):
-            print("WARNING: Predicted prices have very small variation compared to historical data!")
-            print("This could make them appear as a constant line on the graph.")
+            print(f"DEBUG [{current_time}] - WARNING: Predicted prices have very small variation compared to historical data!")
+            print(f"DEBUG [{current_time}] - This could make them appear as a constant line on the graph.")
 
 
 def plot_crypto_data_with_predictions(df: pd.DataFrame, symbol: str, interval: str,
@@ -187,7 +190,8 @@ def plot_crypto_data_with_predictions(df: pd.DataFrame, symbol: str, interval: s
     # Plot test predictions if available
     if pred_dates is not None and predicted_prices is not None and len(pred_dates) == len(predicted_prices):
         plot_predictions(price_ax, pred_dates, predicted_prices)
-        print(f"Plotted {len(predicted_prices)} predicted prices")
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"DEBUG [{current_time}] - Plotted {len(predicted_prices)} predicted prices")
         
         # Add vertical marker for prediction start
         if len(pred_dates) > 0:
@@ -197,7 +201,8 @@ def plot_crypto_data_with_predictions(df: pd.DataFrame, symbol: str, interval: s
     if future_dates is not None and future_predictions is not None and len(future_dates) == len(future_predictions):
         plot_predictions(price_ax, future_dates, future_predictions, 
                         label='Future Prediction', linestyle='-')
-        print(f"Plotted {len(future_predictions)} future predictions")
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"DEBUG [{current_time}] - Plotted {len(future_predictions)} future predictions")
         
         # Add vertical marker for future prediction start
         if len(future_dates) > 0:
